@@ -24,6 +24,8 @@ class BreathSettings: ObservableObject {
     @Published var breathHeight: Double { didSet { UserDefaults.standard.set(breathHeight, forKey: "breathHeight") } }
     @Published var breathSegments: Int { didSet { UserDefaults.standard.set(breathSegments, forKey: "breathSegments") } }
     @Published var barWidth: Double { didSet { UserDefaults.standard.set(barWidth, forKey: "barWidth") } }
+    @Published var autoUpdate: Bool { didSet { UserDefaults.standard.set(autoUpdate, forKey: "autoUpdate") } }
+    
     var onChanged: (() -> Void)?
     var onDraggableChanged: (() -> Void)?
     var onOnlineChanged: (() -> Void)?
@@ -47,6 +49,7 @@ class BreathSettings: ObservableObject {
         breathHeight = UserDefaults.standard.object(forKey: "breathHeight") != nil ? UserDefaults.standard.double(forKey: "breathHeight") : 175
         breathSegments = UserDefaults.standard.object(forKey: "breathSegments") != nil ? UserDefaults.standard.integer(forKey: "breathSegments") : 10
         barWidth = UserDefaults.standard.object(forKey: "barWidth") != nil ? UserDefaults.standard.double(forKey: "barWidth") : 220
+        autoUpdate = UserDefaults.standard.object(forKey: "autoUpdate") != nil ? UserDefaults.standard.bool(forKey: "autoUpdate") : true
     }
 
     var computedInhale: Double {
@@ -207,7 +210,7 @@ struct BreathingTab: View {
 
             Divider()
 
-            // Right: online + segments
+            // Right: online + updates
             VStack(alignment: .leading, spacing: 16) {
                 Text("Online sync").font(.headline)
                 Text("See how many people are breathing with you right now. Available in Standard mode — everyone shares the same rhythm.")
@@ -224,6 +227,20 @@ struct BreathingTab: View {
                     Text("sec")
                 }.disabled(!s.showOnline || s.breathMode != "standard")
                     .opacity(s.showOnline && s.breathMode == "standard" ? 1 : 0.4)
+
+                Divider().padding(.vertical, 8)
+                
+                Text("Updates").font(.headline)
+                HStack {
+                    Text("Current version:")
+                    Text(AppDelegate.currentVersion).font(.system(.body, design: .monospaced)).foregroundColor(.secondary)
+                }
+                Toggle("Check for updates automatically", isOn: $s.autoUpdate)
+                Button("Check for Updates Now") {
+                    if let appDelegate = NSApp.delegate as? AppDelegate {
+                        appDelegate.checkForUpdate(manual: true)
+                    }
+                }.padding(.top, 4)
 
                 Spacer()
             }.frame(maxWidth: .infinity, alignment: .leading)
@@ -522,35 +539,83 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     static let githubRepo = "smaiht/BreatheTogether"
 
-    func checkForUpdate() {
-        // Do not prompt for updates if running locally in DEV mode
-        guard Self.currentVersion != "DEV" else { return }
-        
-        guard let url = URL(string: "https://api.github.com/repos/\(Self.githubRepo)/releases/latest") else { return }
+    var checkingWindow: NSWindow?
+
+    func showCheckingWindow() {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 120),
+                         styleMask: [.titled], backing: .buffered, defer: false)
+        w.title = "Updater"
+        w.contentView = NSHostingView(rootView: VStack(spacing: 16) {
+            ProgressView()
+            Text("Checking for updates...").font(.body)
+        }.padding(30))
+        w.center()
+        w.level = .floating
+        w.isReleasedWhenClosed = false
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        checkingWindow = w
+    }
+
+    func showNoUpdateAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Up to Date"
+        alert.informativeText = "You are running the latest version (\(Self.currentVersion))."
+        alert.alertStyle = .informational
+        alert.icon = makeAppIcon()
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    func checkForUpdate(manual: Bool = false) {
+        if !manual && !BreathSettings.shared.autoUpdate { return }
+        // Do not prompt for automatic updates if running locally in DEV mode
+        if !manual && Self.currentVersion == "DEV" { return }
+
+        if manual { DispatchQueue.main.async { self.showCheckingWindow() } }
+
+        guard let url = URL(string: "https://api.github.com/repos/\(Self.githubRepo)/releases/latest") else {
+            if manual { DispatchQueue.main.async { self.checkingWindow?.close(); self.showNoUpdateAlert() } }
+            return
+        }
         var req = URLRequest(url: url)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         URLSession.shared.dataTask(with: req) { [weak self] data, _, error in
-            guard let data, error == nil,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let tag = json["tag_name"] as? String,
-                  let assets = json["assets"] as? [[String: Any]] else { return }
-            
-            // 1. We ONLY care about macOS releases. Ignore anything else (like "win-v..." or "web-v...")
-            guard tag.hasPrefix("mac-") else { return }
-            
-            // 2. Strip "mac-v" to get the raw timestamp (e.g. "20260315-160000")
-            let remote = tag.replacingOccurrences(of: "mac-v", with: "")
-                            
-            // For timestamps like 20260315-160000, lexicographical (default) comparison works perfectly.
-            // Example: "20260316-100000" > "20260315-160000"
-            guard remote > Self.currentVersion else { return }
-            
-            let dmgAsset = assets.first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
-            guard let downloadURL = dmgAsset?["browser_download_url"] as? String else { return }
-            DispatchQueue.main.async { self?.showUpdateAlert(version: remote, url: downloadURL) }
+            DispatchQueue.main.async {
+                self?.checkingWindow?.close()
+                guard let self = self, let data = data, error == nil,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let tag = json["tag_name"] as? String,
+                      let assets = json["assets"] as? [[String: Any]] else {
+                    if manual { self?.showNoUpdateAlert() }
+                    return
+                }
+
+                // 1. We ONLY care about macOS releases. Ignore anything else (like "win-v..." or "web-v...")
+                guard tag.hasPrefix("mac-") else {
+                    if manual { self.showNoUpdateAlert() }
+                    return
+                }
+
+                // 2. Strip "mac-v" to get the raw timestamp (e.g. "20260315-160000")
+                let remote = tag.replacingOccurrences(of: "mac-v", with: "")
+
+                // For timestamps like 20260315-160000, lexicographical (default) comparison works perfectly.
+                // Example: "20260316-100000" > "20260315-160000"
+                if remote > Self.currentVersion || (manual && Self.currentVersion == "DEV") {
+                    let dmgAsset = assets.first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
+                    guard let downloadURL = dmgAsset?["browser_download_url"] as? String else {
+                        if manual { self.showNoUpdateAlert() }
+                        return
+                    }
+                    self.showUpdateAlert(version: remote, url: downloadURL)
+                } else {
+                    if manual { self.showNoUpdateAlert() }
+                }
+            }
         }.resume()
     }
-
     func showUpdateAlert(version: String, url: String) {
         let alert = NSAlert()
         alert.messageText = "Update Available"
@@ -794,7 +859,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func quit() { NSApp.terminate(nil) }
     @objc func noop() {}
-    @objc func checkForUpdateManual() { checkForUpdate() }
+    @objc func checkForUpdateManual() { checkForUpdate(manual: true) }
 
     @objc func editIconText() {
         let alert = NSAlert()
