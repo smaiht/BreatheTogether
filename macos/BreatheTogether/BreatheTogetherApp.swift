@@ -518,7 +518,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Update checker
 
     static let currentVersion = "1.0.0"
-    static let githubRepo = "smaiht/BreatheTogether" // TODO: set real repo
+    static let githubRepo = "smaiht/BreatheTogether" // TODO: set real repo!
 
     func checkForUpdate() {
         guard let url = URL(string: "https://api.github.com/repos/\(Self.githubRepo)/releases/latest") else { return }
