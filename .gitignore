@@ -1,0 +1,13 @@
+.DS_Store
+*.xcuserdata
+xcuserdata/
+DerivedData/
+.build/
+*.swp
+*~
+
+linux/
+windows/
+web/
+
+TODO.md

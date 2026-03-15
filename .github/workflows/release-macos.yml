@@ -1,0 +1,45 @@
+name: Release macOS
+
+on:
+  push:
+    branches: [master, main]
+    paths: ['macos/**']
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, '[mac]')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VER=$(grep MARKETING_VERSION macos/project.yml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Build universal binary
+        run: |
+          cd macos
+          xcodebuild -scheme BreatheTogether -configuration Release -arch arm64 -derivedDataPath build-arm64 build
+          xcodebuild -scheme BreatheTogether -configuration Release -arch x86_64 -derivedDataPath build-x86 build
+          # Merge into universal
+          APP="build-arm64/Build/Products/Release/Breathe Together.app"
+          lipo -create \
+            "build-arm64/Build/Products/Release/Breathe Together.app/Contents/MacOS/Breathe Together" \
+            "build-x86/Build/Products/Release/Breathe Together.app/Contents/MacOS/Breathe Together" \
+            -output "$APP/Contents/MacOS/Breathe Together"
+
+      - name: Create DMG
+        run: |
+          npm install -g create-dmg
+          cd macos
+          create-dmg "build-arm64/Build/Products/Release/Breathe Together.app" . || true
+          mv *.dmg "BreatheTogether-${{ steps.version.outputs.version }}.dmg"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac-v${{ steps.version.outputs.version }}
+          name: macOS v${{ steps.version.outputs.version }}
+          files: macos/BreatheTogether-${{ steps.version.outputs.version }}.dmg
