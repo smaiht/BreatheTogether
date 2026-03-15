@@ -16,7 +16,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.breathetogether.app
         PRODUCT_NAME: Breathe Together
-        MARKETING_VERSION: "1.0.0"
+        MARKETING_VERSION: "DEV"
         CURRENT_PROJECT_VERSION: "1"
         INFOPLIST_FILE: BreatheTogether/Info.plist
         CODE_SIGN_ENTITLEMENTS: BreatheTogether/BreatheTogether.entitlements

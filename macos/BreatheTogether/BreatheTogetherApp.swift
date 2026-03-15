@@ -517,10 +517,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Update checker
 
-    static let currentVersion = "1.0.0"
-    static let githubRepo = "smaiht/BreatheTogether" // TODO: set real repo!
+    static var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "DEV"
+    }
+    static let githubRepo = "smaiht/BreatheTogether"
 
     func checkForUpdate() {
+        // Do not prompt for updates if running locally in DEV mode
+        guard Self.currentVersion != "DEV" else { return }
+        
         guard let url = URL(string: "https://api.github.com/repos/\(Self.githubRepo)/releases/latest") else { return }
         var req = URLRequest(url: url)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -529,8 +534,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tag = json["tag_name"] as? String,
                   let assets = json["assets"] as? [[String: Any]] else { return }
-            let remote = tag.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
-            guard remote.compare(Self.currentVersion, options: .numeric) == .orderedDescending else { return }
+            
+            // 1. We ONLY care about macOS releases. Ignore anything else (like "win-v..." or "web-v...")
+            guard tag.hasPrefix("mac-") else { return }
+            
+            // 2. Strip "mac-v" to get the raw timestamp (e.g. "20260315-160000")
+            let remote = tag.replacingOccurrences(of: "mac-v", with: "")
+                            
+            // For timestamps like 20260315-160000, lexicographical (default) comparison works perfectly.
+            // Example: "20260316-100000" > "20260315-160000"
+            guard remote > Self.currentVersion else { return }
+            
             let dmgAsset = assets.first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
             guard let downloadURL = dmgAsset?["browser_download_url"] as? String else { return }
             DispatchQueue.main.async { self?.showUpdateAlert(version: remote, url: downloadURL) }

@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
     if: contains(github.event.head_commit.message, '[mac]')
@@ -18,14 +21,14 @@ jobs:
       - name: Extract version
         id: version
         run: |
-          VER=$(grep MARKETING_VERSION macos/project.yml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          VER=$(date +'%Y%m%d-%H%M%S')
           echo "version=$VER" >> $GITHUB_OUTPUT
 
       - name: Build universal binary
         run: |
           cd macos
-          xcodebuild -scheme BreatheTogether -configuration Release -arch arm64 -derivedDataPath build-arm64 build
-          xcodebuild -scheme BreatheTogether -configuration Release -arch x86_64 -derivedDataPath build-x86 build
+          xcodebuild -scheme BreatheTogether -configuration Release -arch arm64 -derivedDataPath build-arm64 MARKETING_VERSION="${{ steps.version.outputs.version }}" build
+          xcodebuild -scheme BreatheTogether -configuration Release -arch x86_64 -derivedDataPath build-x86 MARKETING_VERSION="${{ steps.version.outputs.version }}" build
           # Merge into universal
           APP="build-arm64/Build/Products/Release/Breathe Together.app"
           lipo -create \
