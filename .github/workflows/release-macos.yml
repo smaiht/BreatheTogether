@@ -52,7 +52,7 @@ jobs:
 
             **Option 1 — One command (recommended):**
             ```
-            curl -sL https://raw.githubusercontent.com/smaiht/BreatheTogether/main/install.sh | bash
+            curl -sL https://raw.githubusercontent.com/smaiht/BreatheTogether/master/install.sh | bash
             ```
 
             **Option 2 — Manual DMG:**
