@@ -29,7 +29,6 @@ jobs:
           cd macos
           xcodebuild -scheme BreatheTogether -configuration Release -arch arm64 -derivedDataPath build-arm64 MARKETING_VERSION="${{ steps.version.outputs.version }}" build
           xcodebuild -scheme BreatheTogether -configuration Release -arch x86_64 -derivedDataPath build-x86 MARKETING_VERSION="${{ steps.version.outputs.version }}" build
-          # Merge into universal
           APP="build-arm64/Build/Products/Release/Breathe Together.app"
           lipo -create \
             "build-arm64/Build/Products/Release/Breathe Together.app/Contents/MacOS/Breathe Together" \
@@ -49,3 +48,20 @@ jobs:
           tag_name: mac-v${{ steps.version.outputs.version }}
           name: macOS v${{ steps.version.outputs.version }}
           files: macos/BreatheTogether-${{ steps.version.outputs.version }}.dmg
+          body: |
+            ## Install
+
+            **Option 1 — One command (recommended):**
+            ```
+            curl -sL https://raw.githubusercontent.com/smaiht/BreatheTogether/main/install.sh | bash
+            ```
+
+            **Option 2 — Manual DMG:**
+            1. Download the `.dmg` below
+            2. Drag "Breathe Together" to Applications
+            3. Right-click the app → Open → Open
+
+            **Option 3 — Terminal fix (if app won't open after manual install):**
+            ```
+            xattr -cr "/Applications/Breathe Together.app"
+            ```
