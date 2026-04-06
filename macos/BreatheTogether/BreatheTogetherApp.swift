@@ -236,9 +236,7 @@ struct BreathingTab: View {
                 }
                 Toggle("Check for updates automatically", isOn: $s.autoUpdate)
                 Button("Check for Updates Now") {
-                    if let appDelegate = NSApp.delegate as? AppDelegate {
-                        appDelegate.checkForUpdate(manual: true)
-                    }
+                    AppDelegate.shared?.checkForUpdate(manual: true)
                 }.padding(.top, 4)
 
                 Spacer()
@@ -477,6 +475,7 @@ struct BreatheTogetherApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    static weak var shared: AppDelegate?
     var statusItem: NSStatusItem!
     var overlayWindow: NSWindow!
     var settingsWindow: NSWindow?
@@ -487,6 +486,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let segmentGap: CGFloat = 3
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         NSApp.setActivationPolicy(.accessory)
         NSApp.applicationIconImage = makeAppIcon()
         guard let screen = NSScreen.main else { return }
