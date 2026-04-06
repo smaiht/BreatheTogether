@@ -2,7 +2,7 @@ name: BreatheTogether
 options:
   bundleIdPrefix: com.breathetogether
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "14.0"
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 

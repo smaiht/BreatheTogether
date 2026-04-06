@@ -217,7 +217,7 @@ struct BreathingTab: View {
                     .font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, 4)
                 Toggle("Enable", isOn: $s.showOnline)
-                    .onChange(of: s.showOnline) { _ in s.onOnlineChanged?() }
+                    .onChange(of: s.showOnline) { s.onOnlineChanged?() }
                     .toggleStyle(.switch)
                     .disabled(s.breathMode != "standard")
                     .opacity(s.breathMode == "standard" ? 1 : 0.4)
@@ -365,8 +365,8 @@ struct AppearanceTab: View {
         }
         .padding(20)
         .onAppear { syncFields() }
-        .onChange(of: s.customX) { _ in if s.position == "draggable" { editX = String(Int(s.customX)) } }
-        .onChange(of: s.customY) { _ in if s.position == "draggable" { editY = String(Int(s.customY)) } }
+        .onChange(of: s.customX) { if s.position == "draggable" { editX = String(Int(s.customX)) } }
+        .onChange(of: s.customY) { if s.position == "draggable" { editY = String(Int(s.customY)) } }
     }
 }
 
@@ -389,7 +389,7 @@ struct ColorColumn: View {
             if presetId == "custom" {
                 ColorPicker("", selection: $custom, supportsOpacity: true)
                     .labelsHidden()
-                    .onChange(of: custom) { _ in BreathSettings.shared.apply() }
+                    .onChange(of: custom) { BreathSettings.shared.apply() }
             }
         }
     }
@@ -553,7 +553,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         w.level = .floating
         w.isReleasedWhenClosed = false
         w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         checkingWindow = w
     }
 
@@ -564,14 +564,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .informational
         alert.icon = makeAppIcon()
         alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         alert.runModal()
     }
 
     func checkForUpdate(manual: Bool = false) {
         if !manual && !BreathSettings.shared.autoUpdate { return }
-        // Do not prompt for automatic updates if running locally in DEV mode
-        if !manual && Self.currentVersion == "DEV" { return }
 
         if manual { DispatchQueue.main.async { self.showCheckingWindow() } }
 
@@ -602,8 +600,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let remote = tag.replacingOccurrences(of: "mac-v", with: "")
 
                 // For timestamps like 20260315-160000, lexicographical (default) comparison works perfectly.
-                // Example: "20260316-100000" > "20260315-160000"
-                if remote > Self.currentVersion || (manual && Self.currentVersion == "DEV") {
+                if remote > Self.currentVersion {
                     let dmgAsset = assets.first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
                     guard let downloadURL = dmgAsset?["browser_download_url"] as? String else {
                         if manual { self.showNoUpdateAlert() }
@@ -624,7 +621,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.icon = makeAppIcon()
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Later")
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         guard alert.runModal() == .alertFirstButtonReturn,
               let dmgURL = URL(string: url) else { return }
         downloadUpdate(from: dmgURL, version: version)
@@ -770,7 +767,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let winX = s.barX(screenW: screen.frame.width, barW: bw)
         overlayWindow.setFrame(NSRect(x: winX, y: s.winY(screen: screen, winH: winH), width: bw, height: winH), display: true)
         overlayWindow.contentView?.frame = NSRect(x: 0, y: 0, width: bw, height: winH)
-        buildSegments(in: overlayWindow.contentView!.layer!, barY: (winH - barHeight) / 2)
+        guard let layer = overlayWindow.contentView?.layer else { return }
+        buildSegments(in: layer, barY: (winH - barHeight) / 2)
         applySegmentAnimations(s: s)
     }
 
@@ -847,14 +845,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openSettings() {
-        if let w = settingsWindow { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        if let w = settingsWindow { w.makeKeyAndOrderFront(nil); NSApp.activate(); return }
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "Breathe Settings"
         w.contentView = NSHostingView(rootView: SettingsView())
         w.center(); w.isReleasedWhenClosed = false; w.level = .floating
         settingsWindow = w
-        w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        w.makeKeyAndOrderFront(nil); NSApp.activate()
     }
 
     @objc func quit() { NSApp.terminate(nil) }
@@ -872,7 +870,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         input.stringValue = BreathSettings.shared.trayText.isEmpty ? "breathe" : BreathSettings.shared.trayText
         alert.accessoryView = input
         alert.window.initialFirstResponder = input
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         if alert.runModal() == .alertFirstButtonReturn {
             let s = BreathSettings.shared
             s.trayText = input.stringValue
