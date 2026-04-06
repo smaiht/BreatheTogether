@@ -122,12 +122,13 @@ struct ColorPreset: Identifiable, Hashable {
 // MARK: - Views
 
 struct SettingsView: View {
+    @State var selectedTab = 0
     var body: some View {
         VStack(spacing: 0) {
-            TabView {
-                AppearanceTab().tabItem { Label("Appearance", systemImage: "paintpalette") }
-                IconTab().tabItem { Label("Icon", systemImage: "menubar.rectangle") }
-                BreathingTab().tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }
+            TabView(selection: $selectedTab) {
+                AppearanceTab().tabItem { Label("Appearance", systemImage: "paintpalette") }.tag(0)
+                IconTab().tabItem { Label("Icon", systemImage: "menubar.rectangle") }.tag(1)
+                BreathingTab().tabItem { Label("Advanced", systemImage: "slider.horizontal.3") }.tag(2)
             }
             Divider()
             HStack {
@@ -878,7 +879,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         applyIcon()
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Breathe Together", action: nil, keyEquivalent: ""))
-        onlineMenuItem = NSMenuItem(title: "🌍 —", action: #selector(noop), keyEquivalent: "")
+        onlineMenuItem = NSMenuItem(title: "🌍 —", action: #selector(openOnlineSettings), keyEquivalent: "")
         onlineMenuItem.target = self
         menu.addItem(onlineMenuItem)
         menu.addItem(NSMenuItem.separator())
@@ -894,12 +895,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc func openSettings() {
-        if let w = settingsWindow { w.makeKeyAndOrderFront(nil); NSApp.activate(); return }
+    @objc func openOnlineSettings() { openSettings(tab: 2) }
+
+    @objc func openSettings() { openSettings(tab: nil) }
+
+    func openSettings(tab: Int? = nil) {
+        if let w = settingsWindow {
+            if let tab, let hv = w.contentView as? NSHostingView<SettingsView> {
+                hv.rootView.selectedTab = tab
+            }
+            w.makeKeyAndOrderFront(nil); NSApp.activate(); return
+        }
+        var view = SettingsView()
+        if let tab { view.selectedTab = tab }
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 520),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "Breathe Settings"
-        w.contentView = NSHostingView(rootView: SettingsView())
+        w.contentView = NSHostingView(rootView: view)
         w.center(); w.isReleasedWhenClosed = false; w.level = .floating
         settingsWindow = w
         w.makeKeyAndOrderFront(nil); NSApp.activate()
