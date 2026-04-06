@@ -1,5 +1,7 @@
 # Breathe Together
 
+*What if everyone on earth could breathe in sync?*
+
 A tiny breathing bar that sits on your screen. Follow the rhythm. Calm down.
 
 Everyone sees the same bar, same rhythm, same breath. Sync up and feel the flow.
