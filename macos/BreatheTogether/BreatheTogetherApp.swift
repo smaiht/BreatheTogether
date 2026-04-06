@@ -43,13 +43,13 @@ class BreathSettings: ObservableObject {
         trayText = UserDefaults.standard.string(forKey: "trayText") ?? ""
         draggable = UserDefaults.standard.bool(forKey: "draggable")
         showOnline = UserDefaults.standard.object(forKey: "showOnline") != nil ? UserDefaults.standard.bool(forKey: "showOnline") : false
-        pollInterval = UserDefaults.standard.object(forKey: "pollInterval") != nil ? UserDefaults.standard.double(forKey: "pollInterval") : 60
+        pollInterval = UserDefaults.standard.object(forKey: "pollInterval") != nil ? UserDefaults.standard.double(forKey: "pollInterval") : 300
         breathMode = UserDefaults.standard.string(forKey: "breathMode") ?? "standard"
         breathGender = UserDefaults.standard.string(forKey: "breathGender") ?? "male"
         breathHeight = UserDefaults.standard.object(forKey: "breathHeight") != nil ? UserDefaults.standard.double(forKey: "breathHeight") : 175
         breathSegments = UserDefaults.standard.object(forKey: "breathSegments") != nil ? UserDefaults.standard.integer(forKey: "breathSegments") : 10
         barWidth = UserDefaults.standard.object(forKey: "barWidth") != nil ? UserDefaults.standard.double(forKey: "barWidth") : 220
-        autoUpdate = UserDefaults.standard.object(forKey: "autoUpdate") != nil ? UserDefaults.standard.bool(forKey: "autoUpdate") : true
+        autoUpdate = UserDefaults.standard.object(forKey: "autoUpdate") != nil ? UserDefaults.standard.bool(forKey: "autoUpdate") : false
     }
 
     var computedInhale: Double {
@@ -122,7 +122,6 @@ struct ColorPreset: Identifiable, Hashable {
 // MARK: - Views
 
 struct SettingsView: View {
-    @Environment(\.dismiss) var dismiss
     var body: some View {
         VStack(spacing: 0) {
             TabView {
@@ -510,7 +509,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         view.wantsLayer = true
         overlayWindow.contentView = view
 
-        buildSegments(in: view.layer!, barY: (winH - barHeight) / 2)
+        buildSegments(in: view.layer ?? CALayer(), barY: (winH - barHeight) / 2)
 
         overlayWindow.orderFrontRegardless()
         s.onChanged = { [weak self] in self?.applySettings() }
@@ -550,7 +549,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Text("Checking for updates...").font(.body)
         }.padding(30))
         w.center()
-        w.level = .floating
+        w.level = .modalPanel
         w.isReleasedWhenClosed = false
         w.makeKeyAndOrderFront(nil)
         NSApp.activate()
@@ -564,8 +563,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .informational
         alert.icon = makeAppIcon()
         alert.addButton(withTitle: "OK")
-        NSApp.activate()
-        alert.runModal()
+        if let w = settingsWindow, w.isVisible { alert.beginSheetModal(for: w) }
+        else { NSApp.activate(); alert.runModal() }
     }
 
     func checkForUpdate(manual: Bool = false) {
@@ -621,21 +620,72 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.icon = makeAppIcon()
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Later")
-        NSApp.activate()
-        guard alert.runModal() == .alertFirstButtonReturn,
-              let dmgURL = URL(string: url) else { return }
-        downloadUpdate(from: dmgURL, version: version)
+        let handler: (NSApplication.ModalResponse) -> Void = { resp in
+            guard resp == .alertFirstButtonReturn, let dmgURL = URL(string: url) else { return }
+            self.downloadUpdate(from: dmgURL, version: version)
+        }
+        if let w = settingsWindow, w.isVisible { alert.beginSheetModal(for: w, completionHandler: handler) }
+        else { NSApp.activate(); handler(alert.runModal()) }
     }
 
     func downloadUpdate(from url: URL, version: String) {
-        let dest = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Downloads/BreatheTogether-\(version).dmg")
-        URLSession.shared.downloadTask(with: url) { tempURL, _, error in
-            guard let tempURL, error == nil else { return }
-            try? FileManager.default.removeItem(at: dest)
-            try? FileManager.default.moveItem(at: tempURL, to: dest)
-            DispatchQueue.main.async { NSWorkspace.shared.open(dest) }
-        }.resume()
+        let appPath = Bundle.main.bundlePath
+        let tmp = "/tmp/BreatheTogether-update-\(version).dmg"
+
+        DispatchQueue.global().async {
+            DispatchQueue.main.async { self.showCheckingWindow(); self.checkingWindow?.title = "Updating…" }
+
+            // 1. Download via curl (no quarantine)
+            let dl = Process(); dl.executableURL = URL(fileURLWithPath: "/usr/bin/curl")
+            dl.arguments = ["-fsSL", url.absoluteString, "-o", tmp]
+            try? dl.run(); dl.waitUntilExit()
+            guard dl.terminationStatus == 0 else {
+                DispatchQueue.main.async { self.checkingWindow?.close(); self.showUpdateError("Download failed.") }; return
+            }
+
+            // 2. Mount DMG
+            let pipe = Pipe(); let mount = Process()
+            mount.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+            mount.arguments = ["attach", tmp, "-nobrowse"]; mount.standardOutput = pipe
+            try? mount.run(); mount.waitUntilExit()
+            let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            guard let vol = out.components(separatedBy: "\n")
+                .first(where: { $0.contains("/Volumes/") })?
+                .components(separatedBy: "\t").last?.trimmingCharacters(in: .whitespaces) else {
+                try? FileManager.default.removeItem(atPath: tmp)
+                DispatchQueue.main.async { self.checkingWindow?.close(); self.showUpdateError("Could not mount update.") }; return
+            }
+
+            // 3. Updater script: waits for quit, replaces app, relaunches
+            let script = """
+            #!/bin/bash
+            sleep 1
+            rm -rf "\(appPath)"
+            cp -R "\(vol)/Breathe Together.app" "\(appPath)"
+            hdiutil detach "\(vol)" -quiet 2>/dev/null
+            rm -f "\(tmp)" /tmp/bt-update.sh
+            open "\(appPath)"
+            """
+            let scriptPath = "/tmp/bt-update.sh"
+            try? script.write(toFile: scriptPath, atomically: true, encoding: .utf8)
+
+            let sh = Process(); sh.executableURL = URL(fileURLWithPath: "/bin/bash")
+            sh.arguments = [scriptPath]
+            try? sh.run()
+
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+
+    func showUpdateError(_ msg: String) {
+        let alert = NSAlert()
+        alert.messageText = "Update Failed"
+        alert.informativeText = msg
+        alert.alertStyle = .warning
+        alert.icon = makeAppIcon()
+        alert.addButton(withTitle: "OK")
+        if let w = settingsWindow, w.isVisible { alert.beginSheetModal(for: w) }
+        else { NSApp.activate(); alert.runModal() }
     }
 
     // MARK: - Online polling
@@ -696,7 +746,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             var dragStart: NSPoint = .zero
             var winStart: NSPoint = .zero
             dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged]) { [weak self] event in
-                guard let self else { return event }
+                guard let self, event.window === self.overlayWindow else { return event }
                 let loc = NSEvent.mouseLocation
                 if event.type == .leftMouseDown {
                     dragStart = loc
@@ -828,7 +878,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         applyIcon()
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Breathe Together", action: nil, keyEquivalent: ""))
-        onlineMenuItem = NSMenuItem(title: "🌍 connecting…", action: #selector(noop), keyEquivalent: "")
+        onlineMenuItem = NSMenuItem(title: "🌍 —", action: #selector(noop), keyEquivalent: "")
         onlineMenuItem.target = self
         menu.addItem(onlineMenuItem)
         menu.addItem(NSMenuItem.separator())

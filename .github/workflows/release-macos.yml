@@ -3,7 +3,6 @@ name: Release macOS
 on:
   push:
     branches: [master, main]
-    paths: ['macos/**']
 
 permissions:
   contents: write
